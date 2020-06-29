@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
@@ -15,89 +16,127 @@ class PdfScreenPage extends StatefulWidget {
 class _PdfScreenPageState extends State<PdfScreenPage> {
   PermissionStatus _permissionStatus;
   String remotePDFpath = "";
+  RandomAccessFile randomAccessFile;
 
+  final imgUrl = "http://www.pdf995.com/samples/pdf.pdf";
+  var dio = Dio();
 
   @override
   void initState() {
     // TODO: implement initState
-    requestPermission(Permission.calendar).then((value){
-      requestPermission(Permission.storage).then((value){
-//        getfiledir().then((f){
-//          if(f.path != null){
-//            setState(() {
-//              remotePDFpath = f.path;
-//            });
-//          }else{
-            createFileOfPdfUrl().then((f){
-              setState(() {
-                remotePDFpath = f.path;
-              });
-            });
-//          }
-//        });
-//
-      });
+    requestPermission(Permission.calendar).then((value) {
+      requestPermission(Permission.storage).then((value) {});
     });
-
     super.initState();
   }
 
-  Future<File> createFileOfPdfUrl() async {
-    Completer<File> completer = Completer();
-    print("Start download file from internet!");
+  Future download2(Dio dio, String url, String savePath) async {
     try {
-      // "https://berlin2017.droidcon.cod.newthinking.net/sites/global.droidcon.cod.newthinking.net/files/media/documents/Flutter%20-%2060FPS%20UI%20of%20the%20future%20%20-%20DroidconDE%2017.pdf";
-      // final url = "https://pdfkit.org/docs/guide.pdf";
-      final url = "http://www.pdf995.com/samples/pdf.pdf";
-      final filename = url.substring(url.lastIndexOf("/") + 1);
-      var request = await HttpClient().getUrl(Uri.parse(url));
-      var response = await request.close();
-      var bytes = await consolidateHttpClientResponseBytes(response);
-      var dir = await getApplicationDocumentsDirectory();
-      print("Download files");
-      print("${dir.path}/$filename");
-      File file = File("${dir.path}/$filename");
+      Response response = await dio.get(
+        url,
+        onReceiveProgress: showDownloadProgress,
+        //Received data with List<int>
+        options: Options(
+            responseType: ResponseType.bytes,
+            followRedirects: false,
+            validateStatus: (status) {
+              return status < 500;
+            }),
+      );
+      print(response.headers);
 
+      File file = File(savePath);
 
-      await file.writeAsBytes(bytes, flush: true);
-      completer.complete(file);
+      var raf = file.openSync(mode: FileMode.write);
+      // response.data is List<int> type
+      raf.writeFromSync(response.data);
+      setState(() {
+        randomAccessFile = raf;
+      });
+
+      print('---->>${raf.path}');
+      await raf.close();
     } catch (e) {
-      throw Exception('Error parsing asset file!');
+      print(e);
     }
-
-    return completer.future;
   }
 
-  Directory myDir;
-  Future<File> getfiledir() async {
-    myDir = await getApplicationDocumentsDirectory();
-    File file = File("${myDir.path}/pdf.pdf");
-    print('====internal file path $file');
-    return file;
+  double percent = 0.0;
+  void showDownloadProgress(received, total) {
+    if (total != -1) {
+      setState(() {
+        percent = double.parse((received / total * 100).toStringAsFixed(0));
+      });
 
+      print((received / total * 100).toStringAsFixed(0) + "%");
+    }
   }
+
+//  Directory myDir;
+//  Future<File> getfiledir() async {
+//    myDir = await getTemporaryDirectory();
+//    File file = File("${myDir.path}/pdf.pdf");
+//    print('====internal file path $file');
+//    return file;
+//
+//  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: RaisedButton(
-          child: Text("Remote PDF"),
-          onPressed: () {
-            if (remotePDFpath != null || remotePDFpath.isNotEmpty) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PDFScreen(path: remotePDFpath),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                RaisedButton.icon(
+                    onPressed: () async {
+                      var tempDir = await getApplicationDocumentsDirectory();
+                      String fullPath = tempDir.path + "/boo2.pdf";
+                      print('full path ${fullPath}');
+                      File fi = new File(fullPath);
+
+                      if(fi.existsSync())  {
+                        print('file have no download');
+                        Navigator.push(context, MaterialPageRoute(builder: (context) {
+                          return PDFScreen(path: fi.path);
+                        }));
+                      }else {
+                        download2(dio, imgUrl, fullPath);
+                      }
+                    },
+                    icon: Icon(
+                      Icons.file_download,
+                      color: Colors.white,
+                    ),
+                    color: Colors.green,
+                    textColor: Colors.white,
+                    label: Text('Dowload Invoice')),
+                Text('$percent')
+              ],
+            ),
+            Text(
+                "${randomAccessFile != null ? "${randomAccessFile.path}" : "--"}"),
+            RaisedButton.icon(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return PDFScreen(path: randomAccessFile.path);
+                  }));
+                },
+                icon: Icon(
+                  Icons.file_download,
+                  color: Colors.white,
                 ),
-              );
-            }
-          },
+                color: Colors.green,
+                textColor: Colors.white,
+                label: Text('View Invoice')),
+          ],
         ),
       ),
     );
   }
-
 
   Future<PermissionStatus> requestPermission(Permission permission) async {
     final status = await permission.request();
@@ -121,7 +160,7 @@ class PDFScreen extends StatefulWidget {
 
 class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
   final Completer<PDFViewController> _controller =
-  Completer<PDFViewController>();
+      Completer<PDFViewController>();
   int pages = 0;
   int currentPage = 0;
   bool isReady = false;
@@ -129,85 +168,46 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("Document"),
-        actions: <Widget>[
-          IconButton(
-            icon: Icon(Icons.share),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      body: Stack(
-        children: <Widget>[
-          PDFView(
-            filePath: widget.path,
-            enableSwipe: true,
-            swipeHorizontal: true,
-            autoSpacing: false,
-            pageFling: true,
-            pageSnap: true,
-            defaultPage: currentPage,
-            preventLinkNavigation:
-            false, // if set to true the link is handled in flutter
-            onRender: (_pages) {
-              setState(() {
-                pages = _pages;
-                isReady = true;
-              });
-            },
-            onError: (error) {
-              setState(() {
-                errorMessage = error.toString();
-              });
-              print(error.toString());
-            },
-            onPageError: (page, error) {
-              setState(() {
-                errorMessage = '$page: ${error.toString()}';
-              });
-              print('$page: ${error.toString()}');
-            },
-            onViewCreated: (PDFViewController pdfViewController) {
-              _controller.complete(pdfViewController);
-            },
-            onLinkHandler: (String uri) {
-              print('goto uri: $uri');
-            },
-            onPageChanged: (int page, int total) {
-              print('page change: $page/$total');
-              setState(() {
-                currentPage = page;
-              });
-            },
-          ),
-          errorMessage.isEmpty
-              ? !isReady
-              ? Center(
-            child: CircularProgressIndicator(),
-          )
-              : Container()
-              : Center(
-            child: Text(errorMessage),
-          )
-        ],
-      ),
-      floatingActionButton: FutureBuilder<PDFViewController>(
-        future: _controller.future,
-        builder: (context, AsyncSnapshot<PDFViewController> snapshot) {
-          if (snapshot.hasData) {
-            return FloatingActionButton.extended(
-              label: Text("Go to ${pages ~/ 2}"),
-              onPressed: () async {
-                await snapshot.data.setPage(pages ~/ 2);
-              },
-            );
-          }
-
-          return Container();
-        },
-      ),
+    return PDFView(
+      filePath: widget.path,
+      enableSwipe: true,
+      swipeHorizontal: true,
+      autoSpacing: false,
+      pageFling: true,
+      pageSnap: true,
+      defaultPage: currentPage,
+      preventLinkNavigation:
+          false, // if set to true the link is handled in flutter
+      onRender: (_pages) {
+        setState(() {
+          pages = _pages;
+          isReady = true;
+        });
+      },
+      onError: (error) {
+        setState(() {
+          errorMessage = error.toString();
+        });
+        print(error.toString());
+      },
+      onPageError: (page, error) {
+        setState(() {
+          errorMessage = '$page: ${error.toString()}';
+        });
+        print('$page: ${error.toString()}');
+      },
+      onViewCreated: (PDFViewController pdfViewController) {
+        _controller.complete(pdfViewController);
+      },
+      onLinkHandler: (String uri) {
+        print('goto uri: $uri');
+      },
+      onPageChanged: (int page, int total) {
+        print('page change: $page/$total');
+        setState(() {
+          currentPage = page;
+        });
+      },
     );
   }
 }
