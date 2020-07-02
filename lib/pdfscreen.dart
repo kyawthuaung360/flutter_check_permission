@@ -20,6 +20,8 @@ class _PdfScreenPageState extends State<PdfScreenPage> {
 
   final imgUrl = "http://www.pdf995.com/samples/pdf.pdf";
   var dio = Dio();
+  File fi;
+  String fullPath;
 
   @override
   void initState() {
@@ -27,7 +29,17 @@ class _PdfScreenPageState extends State<PdfScreenPage> {
     requestPermission(Permission.calendar).then((value) {
       requestPermission(Permission.storage).then((value) {});
     });
+    getfilePath();
+
     super.initState();
+  }
+
+  getfilePath() async {
+    var tempDir = await getApplicationDocumentsDirectory();
+    fullPath = tempDir.path + "/boo2.pdf";
+    setState(() {
+      fi = new File(fullPath);
+    });
   }
 
   Future download2(Dio dio, String url, String savePath) async {
@@ -72,75 +84,45 @@ class _PdfScreenPageState extends State<PdfScreenPage> {
     }
   }
 
-//  Directory myDir;
-//  Future<File> getfiledir() async {
-//    myDir = await getTemporaryDirectory();
-//    File file = File("${myDir.path}/pdf.pdf");
-//    print('====internal file path $file');
-//    return file;
-//
-//  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                RaisedButton.icon(
-                    onPressed: () async {
-                      var tempDir = await getApplicationDocumentsDirectory();
-                      String fullPath = tempDir.path + "/boo2.pdf";
-                      print('full path ${fullPath}');
-                      File fi = new File(fullPath);
-
-                      if(fi.existsSync())  {
-                        print('file have no download');
-                        Navigator.push(context, MaterialPageRoute(builder: (context) {
-                          return PDFScreen(path: fi.path);
-                        }));
-                      }else {
-                        download2(dio, imgUrl, fullPath);
-                      }
-                    },
-                    icon: Icon(
-                      Icons.file_download,
-                      color: Colors.white,
-                    ),
-                    color: Colors.green,
-                    textColor: Colors.white,
-                    label: Text('Dowload Invoice')),
-                Text('$percent')
-              ],
+      body: fi.existsSync() == false
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      RaisedButton.icon(
+                          onPressed: () async {
+                            download2(dio, imgUrl, fullPath);
+                          },
+                          icon: Icon(
+                            Icons.file_download,
+                            color: Colors.white,
+                          ),
+                          color: Colors.green,
+                          textColor: Colors.white,
+                          label: Text('Download Invoice')
+                              ),
+                      Text('$percent%')
+                    ],
+                  ),
+                  Text(
+                      "${randomAccessFile != null ? "${randomAccessFile.path}" : "--"}"),
+                ],
+              ),
+            )
+          : PDFScreen(
+              path: fi.path,
             ),
-            Text(
-                "${randomAccessFile != null ? "${randomAccessFile.path}" : "--"}"),
-            RaisedButton.icon(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) {
-                    return PDFScreen(path: randomAccessFile.path);
-                  }));
-                },
-                icon: Icon(
-                  Icons.file_download,
-                  color: Colors.white,
-                ),
-                color: Colors.green,
-                textColor: Colors.white,
-                label: Text('View Invoice')),
-          ],
-        ),
-      ),
     );
   }
 
   Future<PermissionStatus> requestPermission(Permission permission) async {
     final status = await permission.request();
-
     setState(() {
       print(status);
       _permissionStatus = status;
